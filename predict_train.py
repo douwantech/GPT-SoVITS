@@ -97,15 +97,15 @@ class Predictor(BasePredictor):
             sovits_weights_dir = 'SoVITS_weights'
             for root, _, files in os.walk(sovits_weights_dir):
                 for file in files:
-                    if file.startswith(real_uuid):
+                    if file.startswith(real_uuid) and file.endswith("s80.pth"):
                         file_path = os.path.join(root, file)
                         zipf.write(file_path, os.path.relpath(file_path, sovits_weights_dir))
 
             # 添加 GPT_SoVITS 目录下以 UUID 开头的文件
-            gpt_sovits_dir = 'GPT_SoVITS'
+            gpt_sovits_dir = 'GPT_weights'
             for root, _, files in os.walk(gpt_sovits_dir):
                 for file in files:
-                    if file.startswith(real_uuid):
+                    if file.startswith(real_uuid) and file.endswith("e15.ckpt"):
                         file_path = os.path.join(root, file)
                         zipf.write(file_path, os.path.relpath(file_path, gpt_sovits_dir))
         
