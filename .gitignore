@@ -10,3 +10,6 @@ reference
 GPT_weights
 SoVITS_weights
 TEMP
+input/*
+predict.py
+.cog/

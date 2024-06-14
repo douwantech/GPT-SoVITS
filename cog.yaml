@@ -1,0 +1,60 @@
+# Configuration for Cog ⚙️
+# Reference: https://cog.run/yaml
+
+build:
+  # set to true if your model requires a GPU
+  gpu: true
+  cuda: "11.8"
+
+  # a list of ubuntu apt packages to install
+  system_packages:
+     - "libgl1-mesa-glx"
+     - "tzdata"
+     - "ffmpeg"
+     - "libsox-dev"
+     - "parallel"
+     - "aria2"
+     - "git"
+     - "git-lfs"
+     - "vim"
+
+  # python version in the form '3.11' or '3.11.4'
+  python_version: "3.9"
+
+  # a list of packages in the format <package-name>==<version>
+  python_packages:
+    - "numpy"
+    - "scipy"
+    - "tensorboard"
+    - "librosa==0.9.2"
+    - "numba==0.56.4"
+    - "pytorch-lightning"
+    - "gradio==3.38.0"
+    - "gradio_client==0.8.1"
+    - "ffmpeg-python"
+    - "onnxruntime"
+    - "tqdm"
+    - "funasr==1.0.0"
+    - "cn2an"
+    - "pypinyin"
+    - "pyopenjtalk"
+    - "g2p_en"
+    - "torchaudio"
+    - "modelscope==1.10.0"
+    - "sentencepiece"
+    - "transformers"
+    - "chardet"
+    - "PyYAML"
+    - "psutil"
+    - "jieba_fast"
+    - "jieba"
+    - "LangSegment>=0.2.0"
+    - "Faster_Whisper"
+
+  # commands run after the environment is setup
+  # run:
+  #  - "aria2c --disable-ipv6 --input-file /src/Docker/links.txt --dir /src --continue"
+  #   - "echo another command if needed"
+  #
+# predict.py defines how predictions are run on your model
+predict: "predict.py:Predictor"
