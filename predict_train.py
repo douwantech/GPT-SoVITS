@@ -31,10 +31,10 @@ class Predictor(BasePredictor):
                 f"python tools/slice_audio.py {input_file} output/{real_uuid}/slicer_opt -34 4000 100 10 500 0.9 0.25 0 1",
                 f"python tools/cmd-denoise.py -i 'output/{real_uuid}/slicer_opt' -o 'output/{real_uuid}/denoise_opt' -p float16",
                 f"python tools/asr/funasr_asr.py -i 'output/{real_uuid}/denoise_opt' -o 'output/{real_uuid}/asr_opt' -s large -l zh -p float16",
-                #f"python tools/prepare_data.py 'output/{real_uuid}/asr_opt/denoise_opt.list' 'output/{real_uuid}/denoise_opt' '{real_uuid}' '0-1-0-1' '0-1-0-1' '0-1-0-1' \
-                #    'GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large' 'GPT_SoVITS/pretrained_models/chinese-hubert-base' 'GPT_SoVITS/pretrained_models/s2G488k.pth'",
-                #f"python tools/train_sovits.py 11 8 '{real_uuid}' 0.4 1 1 4 '0-1' 'GPT_SoVITS/pretrained_models/s2G488k.pth' 'GPT_SoVITS/pretrained_models/s2D488k.pth'",
-                #f"python tools/train_gpt.py 11 15 '{real_uuid}' 0 1 1 5 '0-1' 'GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt'"
+                f"python tools/prepare_data.py 'output/{real_uuid}/asr_opt/denoise_opt.list' 'output/{real_uuid}/denoise_opt' '{real_uuid}' '0-0' '0-0' '0-0' \
+                    'GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large' 'GPT_SoVITS/pretrained_models/chinese-hubert-base' 'GPT_SoVITS/pretrained_models/s2G488k.pth'",
+                f"python tools/train_sovits.py 11 8 '{real_uuid}' 0.4 1 1 4 '0-1' 'GPT_SoVITS/pretrained_models/s2G488k.pth' 'GPT_SoVITS/pretrained_models/s2D488k.pth'",
+                f"python tools/train_gpt.py 11 15 '{real_uuid}' 0 1 1 5 '0-1' 'GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt'"
             ]
 
             if os.path.exists(log_file):
@@ -53,13 +53,17 @@ class Predictor(BasePredictor):
 
 
     def download_file(self, url, dest_path):
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        with open(dest_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    file.write(chunk)
-        print(f"Downloaded file to {dest_path}")
+        if url.startswith('http://') or url.startswith('https://'):
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            with open(dest_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        file.write(chunk)
+            print(f"Downloaded file to {dest_path}")
+        else:
+            shutil.copy(url, dest_path)
+            print(f"Copied file to {dest_path}")
 
     def execute_command(self, command, log_file):
         with open(log_file, 'a') as log:
@@ -107,6 +111,3 @@ class Predictor(BasePredictor):
         
         print(f"Created zip file: {zip_filename}")
         return zip_filename
-
-#p = Predictor()
-#p.predict(audio_url="https://general-api.oss-cn-hangzhou.aliyuncs.com/static/origin.mp3")

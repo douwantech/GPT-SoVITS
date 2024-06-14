@@ -50,11 +50,12 @@ build:
     - "jieba"
     - "LangSegment>=0.2.0"
     - "Faster_Whisper"
+    - "wordsegment"
 
   # commands run after the environment is setup
-  # run:
-  #  - "aria2c --disable-ipv6 --input-file /src/Docker/links.txt --dir /src --continue"
-  #   - "echo another command if needed"
-  #
+  run:
+    - pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+    - pip install transformers==4.29.2
+
 # predict.py defines how predictions are run on your model
 predict: "predict.py:Predictor"
