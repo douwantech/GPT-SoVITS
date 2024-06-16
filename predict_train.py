@@ -8,6 +8,7 @@ import uuid
 import requests
 import shutil
 from zipfile import ZipFile
+import mimetypes
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
@@ -16,7 +17,7 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        audio_url: Path = Input(description="Human audio url")
+        audio_or_video_url: Path = Input(description="Train audio URL or video URL")
     ) -> Path:
             log_file = 'execution_log.txt'
             real_uuid = str(uuid.uuid4())
@@ -25,7 +26,15 @@ class Predictor(BasePredictor):
             input_file = f'{input_dir}/origin.mp3'
 
             # URL of the file to download
-            self.download_file(str(audio_url), input_file)
+            self.download_file(str(audio_or_video_url), input_file)
+
+            # Check if input_file is a video file
+            mime_type, _ = mimetypes.guess_type(input_file)
+            if mime_type and mime_type.startswith('video'):
+                video_file = input_file
+                input_file = f'{input_dir}/extracted_audio.wav'
+                subprocess.run(['ffmpeg', '-i', video_file, '-q:a', '0', '-map', 'a', input_file, '-y'], check=True)
+
 
             commands = [
                 f"python tools/slice_audio.py {input_file} output/{real_uuid}/slicer_opt -34 4000 100 10 500 0.9 0.25 0 1",
@@ -48,7 +57,7 @@ class Predictor(BasePredictor):
                         log.write(f"Command '{e.cmd}' failed with return code {e.returncode}\n")
                     print(f"Command '{e.cmd}' failed with return code {e.returncode}")
         
-            zip_path = self.zip_files(real_uuid, log_file)
+            zip_path = self.zip_files(real_uuid, log_file, input_file)
             return Path(zip_path)
 
 
@@ -76,9 +85,12 @@ class Predictor(BasePredictor):
             if return_code:
                 raise subprocess.CalledProcessError(return_code, command)
 
-    def zip_files(self, real_uuid, log_file):
+    def zip_files(self, real_uuid, log_file, input_file):
         zip_filename = f'{real_uuid}.zip'
         with ZipFile(zip_filename, 'w') as zipf:
+            # 添加原始输入文件
+            zipf.write(input_file, "input.wav")
+
             # 添加日志文件
             zipf.write(log_file, os.path.basename(log_file))
             

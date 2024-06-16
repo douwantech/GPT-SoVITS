@@ -14,3 +14,4 @@ input/*
 predict.py
 .cog/
 unzipped/*
+train.zip
