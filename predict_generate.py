@@ -36,38 +36,44 @@ class Predictor(BasePredictor):
         zip_url: Path = Input(description="Train zip package"),
         text: str = Input(description="Inference text")
     ) -> Path:
-            log_file = 'execution_log.txt'
-            input_file = f'train.zip'
-            output_dir = 'unzipped'
-            self.download_file(str(zip_url), input_file)
-            self.unzip_file(input_file, output_dir)
-            sovites_model_path = self.find_file(output_dir, '.pth')
-            gpt_model_path = self.find_file(output_dir, '.ckpt')
-            ref_wav = output_dir + "/denoise_opt/" + self.get_ref_wav(os.path.join(output_dir, 'asr_opt/denoise_opt.list'))
+        real_uuid = str(uuid.uuid4())
+        output_dir = f'results/{real_uuid}'
+        os.makedirs(output_dir, exist_ok=True)
 
-            commands = [
-                f"ffmpeg -i {ref_wav} -t 3 -y ref.wav",
-            ]
-            ref_text = self.asr_model.generate(input="ref.wav")[0]["text"]
-            print(f"Ref text: {ref_text}")
+        log_file = os.path.join(output_dir, 'execution_log.txt')
+        input_file = os.path.join(output_dir, 'train.zip')
+        unzip_dir = os.path.join(output_dir, 'unzipped')
 
-            commands = [
-                f"python tools/generate.py {sovites_model_path} {gpt_model_path} ref.wav {ref_text} {text}",
-            ]
+        self.download_file(str(zip_url), input_file)
+        self.unzip_file(input_file, unzip_dir)
+        sovites_model_path = self.find_file(unzip_dir, '.pth')
+        gpt_model_path = self.find_file(unzip_dir, '.ckpt')
+        ref_name = self.get_ref_wav(os.path.join(unzip_dir, 'asr_opt/denoise_opt.list'))
+        ref_wav = os.path.join(unzip_dir, "denoise_opt", ref_name)
+        split_ref_wav = os.path.join(output_dir, 'ref.wav')
 
-            if os.path.exists(log_file):
-                os.remove(log_file)  
+        print("-------------:", ref_wav)
+        self.run_commands([
+            f"ffmpeg -i {ref_wav} -t 3 -y {split_ref_wav}",
+        ], log_file)
+        ref_text = self.asr_model.generate(input=split_ref_wav)[0]["text"]
+        print(f"Ref text: {ref_text}")
 
-            for command in commands:
-                try:
-                    self.execute_command(command, log_file)
-                except subprocess.CalledProcessError as e:
-                    with open(log_file, 'a') as log:
-                        log.write(f"Command '{e.cmd}' failed with return code {e.returncode}\n")
-                    print(f"Command '{e.cmd}' failed with return code {e.returncode}")
-        
-            return Path("result.wav")
+        result_path = os.path.join(output_dir, "result.wav")
+        self.run_commands([
+            f"python tools/generate.py {sovites_model_path} {gpt_model_path} {split_ref_wav} {ref_text} {text} {result_path}",
+        ], log_file)
 
+        return Path(result_path)
+
+    def run_commands(self, commands, log_file):
+        for command in commands:
+            try:
+                self.execute_command(command, log_file)
+            except subprocess.CalledProcessError as e:
+                with open(log_file, 'a') as log:
+                    log.write(f"Command '{e.cmd}' failed with return code {e.returncode}\n")
+                print(f"Command '{e.cmd}' failed with return code {e.returncode}")
 
     def download_file(self, url, dest_path):
         if url.startswith('http://') or url.startswith('https://'):
