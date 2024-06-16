@@ -13,3 +13,4 @@ TEMP
 input/*
 predict.py
 .cog/
+unzipped/*
