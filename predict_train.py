@@ -9,6 +9,7 @@ import requests
 import shutil
 from zipfile import ZipFile
 import mimetypes
+import re
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
@@ -24,42 +25,53 @@ class Predictor(BasePredictor):
             input_dir = f'input/{real_uuid}'
             os.makedirs(input_dir, exist_ok=True)
             input_file = f'{input_dir}/origin.mp3'
-
-            # URL of the file to download
             self.download_file(str(audio_or_video_url), input_file)
 
-            # Check if input_file is a video file
             mime_type, _ = mimetypes.guess_type(input_file)
             if mime_type and mime_type.startswith('video'):
                 video_file = input_file
                 input_file = f'{input_dir}/extracted_audio.wav'
                 subprocess.run(['ffmpeg', '-i', video_file, '-q:a', '0', '-map', 'a', input_file, '-y'], check=True)
 
-
-            commands = [
+            self.run_commands([
                 f"python tools/slice_audio.py {input_file} output/{real_uuid}/slicer_opt -34 4000 100 10 500 0.9 0.25 0 1",
                 f"python tools/cmd-denoise.py -i 'output/{real_uuid}/slicer_opt' -o 'output/{real_uuid}/denoise_opt' -p float16",
                 f"python tools/asr/funasr_asr.py -i 'output/{real_uuid}/denoise_opt' -o 'output/{real_uuid}/asr_opt' -s large -l zh -p float16",
                 f"python tools/prepare_data.py 'output/{real_uuid}/asr_opt/denoise_opt.list' 'output/{real_uuid}/denoise_opt' '{real_uuid}' '0-0' '0-0' '0-0' \
-                    'GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large' 'GPT_SoVITS/pretrained_models/chinese-hubert-base' 'GPT_SoVITS/pretrained_models/s2G488k.pth'",
-                f"python tools/train_sovits.py 11 8 '{real_uuid}' 0.4 1 1 4 '0-1' 'GPT_SoVITS/pretrained_models/s2G488k.pth' 'GPT_SoVITS/pretrained_models/s2D488k.pth'",
-                f"python tools/train_gpt.py 11 15 '{real_uuid}' 0 1 1 5 '0-1' 'GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt'"
-            ]
+                    'GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large' 'GPT_SoVITS/pretrained_models/chinese-hubert-base' 'GPT_SoVITS/pretrained_models/s2G488k.pth'"
+            ], log_file)
 
-            if os.path.exists(log_file):
-                os.remove(log_file)  # 如果日志文件已存在，则删除它以确保新的开始
+            if self.is_previous_step_success(log_file, "一键三连进程结束"):
+                self.run_commands([
+                    f"python tools/train_sovits.py 11 8 '{real_uuid}' 0.4 1 1 4 '0-1' 'GPT_SoVITS/pretrained_models/s2G488k.pth' 'GPT_SoVITS/pretrained_models/s2D488k.pth'"
+                ], log_file)
+            else:
+                raise("Prepare data failure")
 
-            for command in commands:
-                try:
-                    self.execute_command(command, log_file)
-                except subprocess.CalledProcessError as e:
-                    with open(log_file, 'a') as log:
-                        log.write(f"Command '{e.cmd}' failed with return code {e.returncode}\n")
-                    print(f"Command '{e.cmd}' failed with return code {e.returncode}")
-        
+            if self.is_previous_step_success(log_file, "SoVITS训练完成"):
+                self.run_commands([
+                    f"python tools/train_gpt.py 11 15 '{real_uuid}' 0 1 1 5 '0-1' 'GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt'"
+                ], log_file)
+            else:
+                raise("Train Sovits Failure")
+
+            if not self.is_previous_step_success(log_file, "GPT训练完成"):
+                raise("Train GPT Failure")
+
             zip_path = self.zip_files(real_uuid, log_file, input_file)
             return Path(zip_path)
 
+    def is_previous_step_success(self, log_file, keyword):
+        try:
+            with open(log_file, 'r') as file:
+                log_contents = file.read()
+                if keyword in log_contents:
+                    return True
+        except FileNotFoundError:
+            print(f"Log file {log_file} not found.")
+        except Exception as e:
+            print(f"An error occurred while reading the log file: {e}")
+        return False
 
     def download_file(self, url, dest_path):
         if url.startswith('http://') or url.startswith('https://'):
@@ -73,6 +85,15 @@ class Predictor(BasePredictor):
         else:
             shutil.copy(url, dest_path)
             print(f"Copied file to {dest_path}")
+
+    def run_commands(self, commands, log_file):
+        for command in commands:
+            try:
+                self.execute_command(command, log_file)
+            except subprocess.CalledProcessError as e:
+                with open(log_file, 'a') as log:
+                    log.write(f"Command '{e.cmd}' failed with return code {e.returncode}\n")
+                print(f"Command '{e.cmd}' failed with return code {e.returncode}")
 
     def execute_command(self, command, log_file):
         with open(log_file, 'a') as log:
@@ -106,20 +127,39 @@ class Predictor(BasePredictor):
                     zipf.write(file_path, os.path.relpath(file_path, f'output/{real_uuid}'))
             
             # 添加 SoVITS_weights 目录下以 UUID 开头的文件
-            sovits_weights_dir = 'SoVITS_weights'
-            for root, _, files in os.walk(sovits_weights_dir):
-                for file in files:
-                    if file.startswith(real_uuid) and file.endswith("s80.pth"):
-                        file_path = os.path.join(root, file)
-                        zipf.write(file_path, os.path.relpath(file_path, sovits_weights_dir))
+            pth_file = self.find_max_numbered_file('SoVITS_weights', real_uuid, ".pth")
+            if pth_file is None:
+                raise("Can't find pth file")
+            zipf.write(pth_file, os.path.basename(pth_file))
 
             # 添加 GPT_SoVITS 目录下以 UUID 开头的文件
-            gpt_sovits_dir = 'GPT_weights'
-            for root, _, files in os.walk(gpt_sovits_dir):
-                for file in files:
-                    if file.startswith(real_uuid) and file.endswith("e15.ckpt"):
-                        file_path = os.path.join(root, file)
-                        zipf.write(file_path, os.path.relpath(file_path, gpt_sovits_dir))
+            ckpt_file = self.find_max_numbered_file('GPT_weights', real_uuid, ".ckpt")
+            if ckpt_file is None:
+                raise("Can't find ckpt file")
+            zipf.write(ckpt_file, os.path.basename(ckpt_file))
         
+        # 解压 ZIP 文件并列出内容
+        with ZipFile(zip_filename, 'r') as zipf:
+            zipf.extractall(f'{real_uuid}_extracted')
+            print("Files in the zip archive:")
+            for file in zipf.namelist():
+                print(file)
+
         print(f"Created zip file: {zip_filename}")
         return zip_filename
+
+    def find_max_numbered_file(self, directory, prefix, suffix):
+        max_numbered_file = None
+        max_number = -1
+
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if file.startswith(prefix) and file.endswith(suffix):
+                    match = re.search(r'(\d+)' + re.escape(suffix), file)
+                    if match:
+                        number = int(match.group(1))
+                        if number > max_number:
+                            max_number = number
+                            max_numbered_file = os.path.join(root, file)
+
+        return max_numbered_file

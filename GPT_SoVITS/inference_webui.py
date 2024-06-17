@@ -159,9 +159,7 @@ def change_sovits_weights(sovits_path):
     with open("./sweight.txt", "w", encoding="utf-8") as f:
         f.write(sovits_path)
 
-
-change_sovits_weights(sovits_path)
-
+#change_sovits_weights(sovits_path)
 
 def change_gpt_weights(gpt_path):
     global hz, max_sec, t2s_model, config
@@ -180,8 +178,7 @@ def change_gpt_weights(gpt_path):
     with open("./gweight.txt", "w", encoding="utf-8") as f: f.write(gpt_path)
 
 
-change_gpt_weights(gpt_path)
-
+#change_gpt_weights(gpt_path)
 
 def get_spepc(hps, filename):
     audio = load_audio(filename, int(hps.data.sampling_rate))
