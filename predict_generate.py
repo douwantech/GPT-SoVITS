@@ -52,7 +52,6 @@ class Predictor(BasePredictor):
         ref_wav = os.path.join(unzip_dir, "denoise_opt", ref_name)
         split_ref_wav = os.path.join(output_dir, 'ref.wav')
 
-        print("-------------:", ref_wav)
         self.run_commands([
             f"ffmpeg -i {ref_wav} -t 3 -y {split_ref_wav}",
         ], log_file)
@@ -61,7 +60,7 @@ class Predictor(BasePredictor):
 
         result_path = os.path.join(output_dir, "result.wav")
         self.run_commands([
-            f"python tools/generate.py {sovites_model_path} {gpt_model_path} {split_ref_wav} {ref_text} {text} {result_path}",
+            f"python tools/generate.py '{sovites_model_path}' '{gpt_model_path}' '{split_ref_wav}' '{ref_text}' '{text}' '{result_path}'",
         ], log_file)
 
         return Path(result_path)
@@ -116,3 +115,10 @@ class Predictor(BasePredictor):
             first_line = file.readline().strip()
             ref_wav_path = first_line.split('|')[0]
             return os.path.basename(ref_wav_path)
+def test():
+    # 示例用法
+    p = Predictor()
+    p.predict(
+        zip_url="https://replicate.delivery/pbxt/uEMFe94O1W2dUSts7QdLtqrQZfSXw3je6LKfGNjcir0kzf3XC/89b88961-bc69-4789-9c96-4bc7866a4dff.zip",
+        text="我该跟你说些什么好呢, 人生世事无常, 及时行乐, 不必太纠结当下的困境"
+    )
