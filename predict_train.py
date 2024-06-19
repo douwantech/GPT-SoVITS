@@ -1,7 +1,7 @@
 # Prediction interface for Cog ⚙️
 # https://cog.run/python
 
-from cog import BasePredictor, Input, Path
+from cog import BasePredictor, BaseModel, Input, Path
 import subprocess
 import os
 import uuid
@@ -10,28 +10,35 @@ import shutil
 from zipfile import ZipFile
 import mimetypes
 import re
+import nltk
+
+class Output(BaseModel):
+    zip_url: Path
+    audio_url: Path
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        """Load the model into memory to make running multiple predictions efficient"""
-        # self.model = torch.load("./weights.pth")
+        nltk.download('cmudict')
+        nltk.download('averaged_perceptron_tagger')
 
     def predict(
         self,
         audio_or_video_url: Path = Input(description="Train audio URL or video URL")
-    ) -> Path:
-            log_file = 'execution_log.txt'
+    ) -> Output:
             real_uuid = str(uuid.uuid4())
             input_dir = f'input/{real_uuid}'
             os.makedirs(input_dir, exist_ok=True)
             input_file = f'{input_dir}/origin.mp3'
+            log_file = f'{input_dir}/log.txt'
+            with open(log_file, 'w') as file:
+                pass  
             self.download_file(str(audio_or_video_url), input_file)
 
             mime_type, _ = mimetypes.guess_type(input_file)
             if mime_type and mime_type.startswith('video'):
                 video_file = input_file
                 input_file = f'{input_dir}/extracted_audio.wav'
-                subprocess.run(['ffmpeg', '-i', video_file, '-q:a', '0', '-map', 'a', input_file, '-y'], check=True)
+                subprocess.run(['ffmpeg', '-i', video_file, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', input_file, '-y'], check=True)
 
             self.run_commands([
                 f"python tools/slice_audio.py {input_file} output/{real_uuid}/slicer_opt -34 4000 100 10 500 0.9 0.25 0 1",
@@ -46,20 +53,20 @@ class Predictor(BasePredictor):
                     f"python tools/train_sovits.py 11 8 '{real_uuid}' 0.4 1 1 4 '0-1' 'GPT_SoVITS/pretrained_models/s2G488k.pth' 'GPT_SoVITS/pretrained_models/s2D488k.pth'"
                 ], log_file)
             else:
-                raise("Prepare data failure")
+                raise BaseException("Prepare data failure")
 
             if self.is_previous_step_success(log_file, "SoVITS训练完成"):
                 self.run_commands([
                     f"python tools/train_gpt.py 11 15 '{real_uuid}' 0 1 1 5 '0-1' 'GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt'"
                 ], log_file)
             else:
-                raise("Train Sovits Failure")
+                raise BaseException("Train Sovits Failure")
 
             if not self.is_previous_step_success(log_file, "GPT训练完成"):
-                raise("Train GPT Failure")
+                raise BaseException("Train GPT Failure")
 
             zip_path = self.zip_files(real_uuid, log_file, input_file)
-            return Path(zip_path)
+            return Output(zip_url=Path(zip_path), audio_url=Path(input_file))
 
     def is_previous_step_success(self, log_file, keyword):
         try:
@@ -163,3 +170,10 @@ class Predictor(BasePredictor):
                             max_numbered_file = os.path.join(root, file)
 
         return max_numbered_file
+
+def test():
+    p = Predictor()
+    p.setup()
+    p.predict(audio_or_video_url="https://general-api.oss-cn-hangzhou.aliyuncs.com/static/2.mp4")
+
+#test()
