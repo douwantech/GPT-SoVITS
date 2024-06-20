@@ -1,7 +1,7 @@
 # Prediction interface for Cog ⚙️
 # https://cog.run/python
 
-from cog import BasePredictor, BaseModel, Input, Path
+from cog import BasePredictor, BaseModel, Input, Path, Secret
 import subprocess
 import os
 import uuid
@@ -11,8 +11,11 @@ from zipfile import ZipFile
 import mimetypes
 import re
 import nltk
+import oss2
+import json
 
 class Output(BaseModel):
+    oss_zip_url: str
     zip_url: Path
     audio_url: Path
 
@@ -23,7 +26,16 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-        audio_or_video_url: Path = Input(description="Train audio URL or video URL")
+        audio_or_video_url: Path = Input(description="Train audio URL or video URL"),
+        aliyun_oss_configure: Secret = Input(description='''If need upload to aliyun oss directly set this configure. 
+            {
+                "access_key_id": "your_access_key_id",
+                "access_key_secret": "your_access_key_secret",
+                "bucket_name": "your_bucket_name",
+                "endpoint": "your_endpoint",
+                "domain": "your_domain"
+            }
+        ''', default="")
     ) -> Output:
             real_uuid = str(uuid.uuid4())
             input_dir = f'input/{real_uuid}'
@@ -66,7 +78,9 @@ class Predictor(BasePredictor):
                 raise BaseException("Train GPT Failure")
 
             zip_path = self.zip_files(real_uuid, log_file, input_file)
-            return Output(zip_url=Path(zip_path), audio_url=Path(input_file))
+            oss_zip_url = self.upload_file(aliyun_oss_configure, zip_path, "workers/zip")
+            print(f"oss_zip_url: {oss_zip_url}")
+            return Output(oss_zip_url=oss_zip_url, zip_url=Path(zip_path), audio_url=Path(input_file))
 
     def is_previous_step_success(self, log_file, keyword):
         try:
@@ -114,7 +128,9 @@ class Predictor(BasePredictor):
                 raise subprocess.CalledProcessError(return_code, command)
 
     def zip_files(self, real_uuid, log_file, input_file):
-        zip_filename = f'{real_uuid}.zip'
+        if not os.path.exists("results"):
+            os.makedirs("results")
+        zip_filename = f'results/{real_uuid}.zip'
         with ZipFile(zip_filename, 'w') as zipf:
             # 添加原始输入文件
             zipf.write(input_file, "input.wav")
@@ -147,7 +163,7 @@ class Predictor(BasePredictor):
         
         # 解压 ZIP 文件并列出内容
         with ZipFile(zip_filename, 'r') as zipf:
-            zipf.extractall(f'{real_uuid}_extracted')
+            zipf.extractall(f'results/{real_uuid}_extracted')
             print("Files in the zip archive:")
             for file in zipf.namelist():
                 print(file)
@@ -171,9 +187,59 @@ class Predictor(BasePredictor):
 
         return max_numbered_file
 
+    def upload_file(self, aliyun_oss_configure, file_path, target_dir):
+        if isinstance(aliyun_oss_configure, Secret):
+            aliyun_oss_configure = json.loads(aliyun_oss_configure.get_secret_value())
+        else:
+            return ""
+        
+        access_key_id = aliyun_oss_configure['access_key_id']
+        access_key_secret = aliyun_oss_configure['access_key_secret']
+        bucket_name = aliyun_oss_configure['bucket_name']
+        endpoint = aliyun_oss_configure['endpoint']   
+        domain = aliyun_oss_configure['domain']   
+
+        auth = oss2.Auth(access_key_id, access_key_secret)
+        bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+        file_name = os.path.basename(file_path)
+        target_path = f"{target_dir}/{file_name}"
+        try:
+            bucket.put_object_from_file(target_path, file_path)
+            print(f"Successfully uploaded {file_name} to {target_path}")
+            file_url = f"https://{domain}/{target_path}"
+            return file_url
+        except oss2.exceptions.OssError as e:
+            raise BaseException(f"Failed to upload {file_name} to OSS: {e}")
+            return None
+
+        auth = oss2.Auth(access_key_id, access_key_secret)
+        bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+        # 获取文件名
+        file_name = os.path.basename(file_path)
+        target_path = f"{target_dir}/{file_name}"
+        
+        try:
+            bucket.put_object_from_file(target_path, file_path)
+            print(f"Successfully uploaded {file_name} to {target_path}")
+            file_url = f"https://{bucket_name}.{endpoint}/{target_path}"
+            return file_url
+        except oss2.exceptions.OssError as e:
+            raise BaseException(f"Failed to upload {file_name} to OSS: {e}")
+            return None
+
 def test():
     p = Predictor()
     p.setup()
-    p.predict(audio_or_video_url="https://general-api.oss-cn-hangzhou.aliyuncs.com/static/2.mp4")
+    p.predict(audio_or_video_url="https://general-api.oss-cn-hangzhou.aliyuncs.com/static/2.mp4", aliyun_oss_configure=Secret('''
+        {
+            "access_key_id": "",
+            "access_key_secret": "",
+            "bucket_name": "",
+            "endpoint": "",
+            "domain": ""
+        }
+    '''))
 
 #test()

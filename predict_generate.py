@@ -120,5 +120,7 @@ def test():
     p = Predictor()
     p.predict(
         zip_url="https://replicate.delivery/pbxt/uEMFe94O1W2dUSts7QdLtqrQZfSXw3je6LKfGNjcir0kzf3XC/89b88961-bc69-4789-9c96-4bc7866a4dff.zip",
-        text="我该跟你说些什么好呢, 人生世事无常, 及时行乐, 不必太纠结当下的困境"
+        text="我该跟你说些什么好呢,人生世事无常,及时行乐,不必太纠结当下的困境"
     )
+
+#test()

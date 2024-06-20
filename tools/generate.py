@@ -16,6 +16,6 @@ def str_to_bool(s):
 
 change_sovits_weights(sys.argv[1])
 change_gpt_weights(sys.argv[2])
-result = get_tts_wav(sys.argv[3], sys.argv[4], "Chinese", sys.argv[5], "Chinese")
+result = get_tts_wav(sys.argv[3], sys.argv[4], "Chinese", sys.argv[5], "Chinese", how_to_cut="Slice by every punct")
 sampling_rate, audio_data = next(result)
 wavfile.write(sys.argv[6], sampling_rate, audio_data)
