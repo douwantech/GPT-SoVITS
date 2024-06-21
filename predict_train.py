@@ -2,6 +2,7 @@
 # https://cog.run/python
 
 from cog import BasePredictor, BaseModel, Input, Path, Secret
+from typing import Optional
 import subprocess
 import os
 import uuid
@@ -15,8 +16,8 @@ import oss2
 import json
 
 class Output(BaseModel):
-    oss_zip_url: str
-    zip_url: Path
+    oss_zip_url: Optional[str]
+    zip_url: Optional[Path]
     audio_url: Path
 
 class Predictor(BasePredictor):
@@ -80,7 +81,9 @@ class Predictor(BasePredictor):
             zip_path = self.zip_files(real_uuid, log_file, input_file)
             oss_zip_url = self.upload_file(aliyun_oss_configure, zip_path, "workers/zip")
             print(f"oss_zip_url: {oss_zip_url}")
-            return Output(oss_zip_url=oss_zip_url, zip_url=Path(zip_path), audio_url=Path(input_file))
+            if oss_zip_url != "":
+                return Output(oss_zip_url=oss_zip_url, audio_url=Path(input_file))
+            return Output(zip_url=Path(zip_path), audio_url=Path(input_file))
 
     def is_previous_step_success(self, log_file, keyword):
         try:
@@ -189,7 +192,11 @@ class Predictor(BasePredictor):
 
     def upload_file(self, aliyun_oss_configure, file_path, target_dir):
         if isinstance(aliyun_oss_configure, Secret):
-            aliyun_oss_configure = json.loads(aliyun_oss_configure.get_secret_value())
+            try:
+                aliyun_oss_configure = json.loads(aliyun_oss_configure.get_secret_value())
+            except:
+                raise BaseException(f"Invalid oss configure, will not upload to oss")
+                return ""
         else:
             return ""
         
